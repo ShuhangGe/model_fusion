@@ -1,0 +1,29 @@
+# Core deep learning framework
+torch>=2.1
+
+# Essential data science libraries
+numpy>=1.17
+
+# Image processing
+Pillow>=10.0.1,<=15.0
+torchvision
+
+# Video processing
+av
+
+# HuggingFace ecosystem
+huggingface-hub>=0.30.0,<1.0
+tokenizers>=0.21,<0.22
+safetensors>=0.4.3
+
+# File and data utilities
+tqdm>=4.27
+filelock
+packaging>=20.0
+pyyaml>=5.1
+regex!=2019.12.17
+requests
+
+# Optional for enhanced functionality
+dataclasses  # For Python < 3.7
+typing_extensions  # For enhanced typing support 
