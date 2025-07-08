@@ -15,7 +15,8 @@
 """
 GLM-4V Model Components
 
-This module provides access to the GLM-4V multimodal model implementation.
+This module provides access to the GLM-4V multimodal model implementation
+and comprehensive inference tools.
 """
 
 # Configuration classes
@@ -39,6 +40,16 @@ from .processing_glm4v import Glm4vProcessor
 from .image_processing_glm4v import Glm4vImageProcessor
 from .video_processing_glm4v import Glm4vVideoProcessor
 
+# Inference tools
+from .inference import (
+    GLM4VInferenceEngine,
+    InferenceConfig,
+    GLM4VCLIChat,
+    GLM4VGradioApp,
+    GLM4VvLLMClient,
+    GLM4VRobustInference,
+)
+
 __all__ = [
     # Configuration
     "Glm4vConfig",
@@ -54,4 +65,11 @@ __all__ = [
     "Glm4vProcessor",
     "Glm4vImageProcessor",
     "Glm4vVideoProcessor",
+    # Inference Tools
+    "GLM4VInferenceEngine",
+    "InferenceConfig",
+    "GLM4VCLIChat",
+    "GLM4VGradioApp", 
+    "GLM4VvLLMClient",
+    "GLM4VRobustInference",
 ]
