@@ -1,337 +1,175 @@
-# GLM4V Standalone Vision Encoder
+# GLM4V Embedding Pipeline
 
-A complete, standalone implementation of the GLM4V vision encoder that is independent of text model components. This extraction allows you to use the powerful vision processing capabilities of GLM4V in any project without the overhead of the full multimodal model.
+This directory contains the complete GLM4V embedding pipeline extracted from the GLM4V multimodal model. The pipeline provides a unified interface for extracting visual embeddings from images and videos that can be used as input to language models.
 
 ## Overview
 
-The GLM4V vision encoder is a state-of-the-art vision transformer that processes images and videos into continuous embeddings. This standalone version maintains all the original capabilities while removing dependencies on the text model and transformers library.
+The GLM4V embedding pipeline consists of several key components:
 
-### Key Features
+- **Vision Model**: Transformer-based vision encoder that processes visual patches
+- **Image Processor**: Handles image preprocessing and patch extraction
+- **Video Processor**: Handles video preprocessing and temporal patch extraction
+- **Embedding Pipeline**: Unified interface that combines all components
 
-- **Standalone Architecture**: Complete independence from text models and transformers
-- **Vision Transformer**: Advanced attention-based architecture for image/video processing
-- **Adaptive Position Encoding**: 2D interpolation for handling variable image sizes
-- **Patch Merging**: Efficient spatial downsampling for reduced computational cost
-- **Multi-scale Support**: Process images and videos of different sizes
-- **Easy Integration**: Simple APIs for integration with other models
-- **Save/Load Support**: Persistent model storage and loading
+## Components
 
-## Architecture
+### Core Files
 
-The vision encoder consists of several key components:
+- `config.py` - Configuration classes for the vision model
+- `vision_model.py` - Complete vision transformer implementation
+- `processing.py` - Image and video processing pipelines
+- `embedding_pipeline.py` - Main interface for embedding extraction
+- `utils.py` - Utility functions for common operations
+- `__init__.py` - Module exports and public API
 
-1. **Patch Embedding**: 3D convolution to convert image patches to embeddings
-2. **Position Embeddings**: Learnable 2D position encoding with interpolation
-3. **Vision Transformer Blocks**: Multi-head attention + MLP layers
-4. **Spatial Merging**: Downsampling for computational efficiency
-5. **Output Processing**: Final normalization and dimensionality adjustment
+### Key Classes
 
-```
-Input Image/Video → Patch Embedding → Position Encoding → Transformer Blocks → Spatial Merging → Output Embeddings
-```
-
-## Installation
-
-No special installation required beyond standard dependencies:
-
-```bash
-pip install torch torchvision numpy pillow
-```
-
-## Quick Start
-
-### Basic Usage
+#### `GLM4VEmbeddingPipeline`
+Main interface for extracting embeddings from images and videos.
 
 ```python
-from model.vision_encoder import VisionConfig, VisionModel, VisionProcessor
+from model.encoder import GLM4VEmbeddingPipeline
+
+# Initialize pipeline
+pipeline = GLM4VEmbeddingPipeline()
+
+# Extract image embeddings
+image_embeddings = pipeline.extract_image_embeddings(images)
+
+# Extract video embeddings 
+video_embeddings = pipeline.extract_video_embeddings(videos, video_metadata)
+```
+
+#### `Glm4vVisionModel`
+Core vision transformer that processes visual patches into embeddings.
+
+#### `Glm4vImageProcessor` / `Glm4vVideoProcessor`
+Handle preprocessing of images and videos respectively, including:
+- Dynamic resizing based on content
+- Patch extraction and tokenization
+- Normalization and data format conversion
+
+## Usage Examples
+
+### Basic Image Processing
+
+```python
+from model.encoder import GLM4VEmbeddingPipeline
 from PIL import Image
 
-# Create components
-config = VisionConfig()
-model = VisionModel(config)
-processor = VisionProcessor()
+# Load pipeline
+pipeline = GLM4VEmbeddingPipeline()
 
-# Process an image
-image = Image.open("path/to/image.jpg")
-inputs = processor(images=[image], return_tensors="pt")
+# Load and process image
+image = Image.open("example.jpg")
+result = pipeline.extract_image_embeddings([image], return_dict=True)
 
-# Generate embeddings
-embeddings = model.get_image_features(
-    inputs["pixel_values"], 
-    inputs["image_grid_thw"]
+print(f"Embeddings shape: {result['embeddings'].shape}")
+print(f"Number of patches: {result['num_patches']}")
+print(f"Embedding dimension: {result['embedding_dim']}")
+```
+
+### Basic Video Processing
+
+```python
+import torch
+from model.encoder import GLM4VEmbeddingPipeline
+
+# Load pipeline
+pipeline = GLM4VEmbeddingPipeline()
+
+# Process video (assuming video is already loaded as tensor)
+video_tensor = torch.randn(16, 3, 224, 224)  # 16 frames, 3 channels, 224x224
+video_metadata = {"fps": 30.0, "duration": 0.533, "total_num_frames": 16}
+
+result = pipeline.extract_video_embeddings(
+    video_tensor, 
+    video_metadata=[video_metadata],
+    return_dict=True
 )
 
-print(f"Generated embedding shape: {embeddings[0].shape}")
+print(f"Video embeddings shape: {result['embeddings'].shape}")
+print(f"Timestamps: {result['timestamps']}")
 ```
 
-### Factory Functions
-
-For simplified setup, use the factory functions:
+### Advanced Usage with Custom Configuration
 
 ```python
-from model.vision_encoder import create_glm4v_vision_encoder, encode_image
+from model.encoder import GLM4VEmbeddingPipeline, Glm4vVisionConfig
 
-# Create complete setup
-config, model, processor = create_glm4v_vision_encoder()
-
-# Or encode an image directly
-embeddings = encode_image("path/to/image.jpg")
-```
-
-## Configuration
-
-The `VisionConfig` class allows customization of the model architecture:
-
-### Default Configuration
-
-```python
-config = VisionConfig(
-    depth=24,                    # Number of transformer layers
-    hidden_size=1536,           # Hidden dimension
-    num_heads=12,               # Number of attention heads
-    patch_size=14,              # Size of image patches
-    image_size=336,             # Input image size
-    spatial_merge_size=2,       # Spatial downsampling factor
-    temporal_patch_size=1,      # Temporal patch size (for videos)
-    out_hidden_size=4096,       # Output embedding dimension
-    intermediate_size=13696,    # MLP intermediate size
-    attention_dropout=0.0,      # Attention dropout rate
-    hidden_act="silu",          # Activation function
-    rms_norm_eps=1e-05,         # RMS norm epsilon
-)
-```
-
-### Custom Configurations
-
-```python
-# Smaller model for faster inference
-small_config = VisionConfig(
-    hidden_size=768,
-    depth=12,
-    num_heads=8,
-    patch_size=16,
-    image_size=224,
+# Custom configuration
+config = Glm4vVisionConfig(
+    hidden_size=1536,
+    depth=24,
+    num_heads=12,
+    patch_size=14,
+    spatial_merge_size=2,
 )
 
-# Larger model for better quality
-large_config = VisionConfig(
-    hidden_size=2048,
-    depth=32,
-    num_heads=16,
-    patch_size=12,
-    image_size=448,
-)
+# Initialize with custom config
+pipeline = GLM4VEmbeddingPipeline(config=config)
+
+# Use pipeline...
 ```
 
-## API Reference
+## Output Format
 
-### Core Classes
+### Image Embeddings
+The pipeline produces embeddings with the following characteristics:
 
-#### VisionConfig
-Configuration class for the vision model.
+- **Shape**: `(num_patches, hidden_size)` where `hidden_size=4096` by default
+- **Content**: Dense visual representations suitable for language model input
+- **Grid Information**: Spatial layout information (`image_grid_thw`)
 
-**Key Parameters:**
-- `hidden_size`: Hidden dimension of the model
-- `depth`: Number of transformer layers
-- `num_heads`: Number of attention heads
-- `patch_size`: Size of image patches
-- `image_size`: Input image resolution
+### Video Embeddings
+Video embeddings include additional temporal information:
 
-#### VisionModel
-Main vision transformer model.
+- **Shape**: `(num_patches, hidden_size)` 
+- **Temporal Info**: Frame sampling timestamps
+- **Grid Information**: Temporal, height, width layout (`video_grid_thw`)
 
-**Key Methods:**
-- `get_image_features(pixel_values, image_grid_thw)`: Process images
-- `get_video_features(pixel_values_videos, video_grid_thw)`: Process videos
-- `save_pretrained(path)`: Save model to disk
-- `from_pretrained(path)`: Load model from disk
+## Configuration Options
 
-#### VisionProcessor
-Image/video preprocessing pipeline.
+The `Glm4vVisionConfig` class provides these key parameters:
 
-**Key Methods:**
-- `__call__(images=None, videos=None, return_tensors=None)`: Process inputs
-- `get_number_of_image_patches(height, width)`: Calculate patch count
+- `hidden_size`: Dimension of hidden representations (default: 1536)
+- `depth`: Number of transformer layers (default: 24)
+- `num_heads`: Number of attention heads (default: 12)
+- `patch_size`: Spatial patch size (default: 14)
+- `spatial_merge_size`: Spatial merging factor (default: 2)
+- `out_hidden_size`: Output embedding dimension (default: 4096)
 
-### Factory Functions
+## Performance Considerations
 
-#### create_glm4v_vision_encoder()
-Create a complete vision encoder setup with default configurations.
+- The pipeline supports GPU acceleration when available
+- Video processing includes frame sampling to manage computational load
+- Images are dynamically resized to optimize patch count vs. quality tradeoff
 
-**Returns:** `(config, model, processor)`
+## Integration Notes
 
-#### encode_image(image_path)
-Convenience function to encode a single image.
+This pipeline is designed to be compatible with:
+- Language models expecting vision embeddings
+- Multimodal architectures that combine vision and text
+- Custom downstream tasks requiring visual representations
 
-**Returns:** Embedding tensor
+The embeddings produced are in the same format as the original GLM4V model, ensuring compatibility with existing workflows.
 
-#### encode_images(image_paths, batch_size=1)
-Encode multiple images efficiently.
+## Dependencies
 
-**Returns:** List of embedding tensors
+- PyTorch
+- Transformers library
+- PIL (Python Imaging Library)
+- NumPy
+- Optional: torchvision (for video processing)
 
-## Processing Pipeline
+## Architecture Details
 
-### Image Processing
+The vision model uses a standard Vision Transformer architecture with GLM4V-specific modifications:
 
-1. **Load**: PIL Image or numpy array
-2. **Convert**: RGB conversion if needed
-3. **Resize**: Smart resize based on patch and merge sizes
-4. **Normalize**: Mean/std normalization with CLIP values
-5. **Patch**: Convert to patches for transformer processing
-6. **Embed**: Generate embeddings through the model
+1. **Patch Embedding**: 3D convolution for temporal-spatial patch extraction
+2. **Position Embedding**: 2D interpolated position embeddings with rotary embeddings
+3. **Transformer Blocks**: Standard multi-head attention with RMS normalization
+4. **Spatial Merging**: Downsampling via 2D convolution before final projection
+5. **Output Projection**: MLP projection to target embedding dimension
 
-### Supported Formats
-
-- **Images**: PNG, JPEG, WebP, BMP (via PIL)
-- **Videos**: Sequence of frames as numpy arrays
-- **Input Types**: PIL Images, numpy arrays, PyTorch tensors
-
-## Performance
-
-### Benchmarks
-
-| Image Size | Patches | Inference Time | Memory |
-|------------|---------|----------------|---------|
-| 224×224    | 256     | ~50ms         | ~12MB   |
-| 336×336    | 576     | ~120ms        | ~28MB   |
-| 448×448    | 1024    | ~220ms        | ~50MB   |
-
-*Benchmarks on CPU with default configuration*
-
-### Optimization Tips
-
-1. **Batch Processing**: Process multiple images together
-2. **Smaller Patches**: Use larger `patch_size` for faster inference
-3. **Reduced Depth**: Fewer layers for speed vs quality trade-off
-4. **Mixed Precision**: Use `torch.autocast()` for memory efficiency
-
-## Integration Examples
-
-### With Classification Models
-
-```python
-import torch.nn as nn
-
-class VisionClassifier(nn.Module):
-    def __init__(self, vision_encoder, num_classes):
-        super().__init__()
-        self.vision_encoder = vision_encoder
-        self.classifier = nn.Linear(vision_encoder.config.out_hidden_size, num_classes)
-    
-    def forward(self, pixel_values, image_grid_thw):
-        embeddings = self.vision_encoder.get_image_features(pixel_values, image_grid_thw)
-        pooled = torch.stack([emb.mean(dim=0) for emb in embeddings])
-        return self.classifier(pooled)
-```
-
-### With Retrieval Systems
-
-```python
-def create_image_index(image_paths, model, processor):
-    embeddings = []
-    for path in image_paths:
-        emb = encode_image(path, model, processor)
-        embeddings.append(emb.cpu().numpy())
-    return np.stack(embeddings)
-
-def find_similar_images(query_path, index, image_paths, k=5):
-    query_emb = encode_image(query_path)
-    similarities = np.dot(index, query_emb.cpu().numpy())
-    top_k = np.argsort(similarities)[-k:]
-    return [image_paths[i] for i in top_k]
-```
-
-## Technical Details
-
-### Position Encoding
-
-The model uses adaptive 2D position encoding that interpolates based on input image size:
-
-```python
-# Original position embeddings are interpolated to match input size
-adapted_pos_embed = F.grid_sample(
-    pos_embed_2d, grid, mode="bicubic", align_corners=False
-)
-```
-
-### Attention Mechanism
-
-Multi-head attention with rotary position embeddings:
-
-```python
-query_states, key_states = apply_rotary_pos_emb_vision(
-    query_states, key_states, cos, sin
-)
-```
-
-### Spatial Merging
-
-Efficient downsampling to reduce computational cost:
-
-```python
-# 2x2 spatial merging reduces patch count by 4x
-downsampled = self.downsample(hidden_states)  # Conv2d with stride=2
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Out of Memory**: Reduce `image_size` or `hidden_size`
-2. **Slow Inference**: Increase `patch_size` or reduce `depth`
-3. **Poor Quality**: Check image preprocessing and normalization
-4. **Shape Mismatches**: Verify `image_grid_thw` dimensions
-
-### Debug Mode
-
-Enable detailed logging:
-
-```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
-```
-
-## Model Weights
-
-The standalone vision encoder maintains the same architecture as the original GLM4V, allowing weight transfer:
-
-```python
-# Transfer weights from original GLM4V
-original_vision_state = original_glm4v_model.visual.state_dict()
-standalone_model.load_state_dict(original_vision_state)
-```
-
-## Contributing
-
-This implementation preserves the original GLM4V vision architecture while providing a clean, standalone interface. When contributing:
-
-1. Maintain compatibility with original weight formats
-2. Preserve all original functionality
-3. Add comprehensive tests for new features
-4. Update documentation for API changes
-
-## License
-
-Licensed under the Apache License, Version 2.0. See LICENSE file for details.
-
-## Citation
-
-If you use this standalone vision encoder, please cite the original GLM4V work:
-
-```bibtex
-@article{glm4v2024,
-  title={GLM-4V: Multimodal Large Language Model},
-  author={GLM Team},
-  journal={arXiv preprint},
-  year={2024}
-}
-```
-
-## Changelog
-
-### v1.0.0
-- Initial extraction from GLM4V
-- Complete standalone implementation
-- Factory functions and convenience APIs
-- Comprehensive documentation and examples 
+This extracted pipeline maintains full compatibility with the original GLM4V vision processing while providing a clean, standalone interface for embedding extraction. 

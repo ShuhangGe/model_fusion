@@ -13,216 +13,222 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Utilities for the standalone GLM4V Vision Encoder
-Contains activation functions, attention utilities, and helper functions.
-"""
+"""Utility functions for GLM4V embedding pipeline."""
 
+from typing import Union, List, Tuple, Any, Optional
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from typing import Optional, Callable
+import numpy as np
+from PIL import Image
 
 
-def silu(x):
+def format_embeddings_for_language_model(
+    embeddings: torch.Tensor,
+    batch_size: int = 1,
+    sequence_length: Optional[int] = None,
+) -> torch.Tensor:
     """
-    SiLU activation function (Swish)
-    """
-    return x * torch.sigmoid(x)
-
-
-def gelu(x):
-    """
-    GELU activation function
-    """
-    return F.gelu(x)
-
-
-def relu(x):
-    """
-    ReLU activation function
-    """
-    return F.relu(x)
-
-
-def gelu_new(x):
-    """
-    GELU activation function (new implementation)
-    """
-    return 0.5 * x * (1.0 + torch.tanh(0.79788456 * x * (1.0 + 0.044715 * x * x)))
-
-
-# Activation function mapping
-ACT2FN = {
-    "gelu": gelu,
-    "gelu_new": gelu_new,
-    "relu": relu,
-    "silu": silu,
-    "swish": silu,
-}
-
-
-def rotate_half(x):
-    """Rotates half the hidden dims of the input."""
-    x1 = x[..., : x.shape[-1] // 2]
-    x2 = x[..., x.shape[-1] // 2 :]
-    return torch.cat((-x2, x1), dim=-1)
-
-
-def apply_rotary_pos_emb_vision(
-    q: torch.Tensor, k: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    Apply rotary position embedding to query and key tensors.
+    Format GLM4V embeddings for use with language models.
     
     Args:
-        q: Query tensor
-        k: Key tensor
-        cos: Cosine components of rotary embeddings
-        sin: Sine components of rotary embeddings
-    
-    Returns:
-        Tuple of (rotated_q, rotated_k)
-    """
-    orig_q_dtype = q.dtype
-    orig_k_dtype = k.dtype
-    q, k = q.float(), k.float()
-    cos, sin = cos.unsqueeze(-2).float(), sin.unsqueeze(-2).float()
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
-    q_embed = q_embed.to(orig_q_dtype)
-    k_embed = k_embed.to(orig_k_dtype)
-    return q_embed, k_embed
-
-
-def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
-    """
-    This is the equivalent of torch.repeat_interleave(x, dim=1, repeats=n_rep). The hidden states go from (batch,
-    num_key_value_heads, seqlen, head_dim) to (batch, num_attention_heads, seqlen, head_dim)
-    """
-    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
-    if n_rep == 1:
-        return hidden_states
-    hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
-    return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
-
-
-def eager_attention_forward(
-    module: nn.Module,
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
-    attention_mask: Optional[torch.Tensor],
-    scaling: float,
-    dropout: float = 0.0,
-    **kwargs,
-):
-    """
-    Eager attention implementation for vision transformer.
-    
-    Args:
-        module: The attention module
-        query: Query tensor
-        key: Key tensor  
-        value: Value tensor
-        attention_mask: Optional attention mask
-        scaling: Scaling factor for attention scores
-        dropout: Dropout probability
+        embeddings: Raw embeddings from GLM4V vision model
+        batch_size: Target batch size
+        sequence_length: Target sequence length (if None, uses embedding length)
         
     Returns:
-        Tuple of (attention_output, attention_weights)
+        torch.Tensor: Formatted embeddings with shape (batch_size, sequence_length, hidden_size)
     """
-    key_states = repeat_kv(key, module.num_key_value_groups)
-    value_states = repeat_kv(value, module.num_key_value_groups)
-
-    attn_weights = torch.matmul(query, key_states.transpose(2, 3)) * scaling
-    if attention_mask is not None:
-        causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
-        attn_weights = attn_weights + causal_mask
-
-    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query.dtype)
-    attn_weights = nn.functional.dropout(attn_weights, p=dropout, training=module.training)
-    attn_output = torch.matmul(attn_weights, value_states)
-    attn_output = attn_output.transpose(1, 2).contiguous()
-
-    return attn_output, attn_weights
-
-
-class BaseLayer(nn.Module):
-    """
-    Base layer class that provides common functionality for vision layers.
-    Replaces functionality from transformers.modeling_layers.GradientCheckpointingLayer
-    """
+    if embeddings.dim() == 2:
+        # Shape: (num_patches, hidden_size) -> (batch_size, sequence_length, hidden_size)
+        num_patches, hidden_size = embeddings.shape
+        
+        if sequence_length is None:
+            sequence_length = num_patches
+        
+        if sequence_length > num_patches:
+            # Pad with zeros if needed
+            padding = torch.zeros(sequence_length - num_patches, hidden_size, 
+                                device=embeddings.device, dtype=embeddings.dtype)
+            embeddings = torch.cat([embeddings, padding], dim=0)
+        elif sequence_length < num_patches:
+            # Truncate if needed
+            embeddings = embeddings[:sequence_length]
+        
+        # Reshape to batch format
+        embeddings = embeddings.unsqueeze(0).expand(batch_size, -1, -1)
     
-    def __init__(self):
-        super().__init__()
-        self.gradient_checkpointing = False
-
-    def _gradient_checkpointing_func(self, *args, **kwargs):
-        """
-        Simple gradient checkpointing wrapper.
-        """
-        if self.gradient_checkpointing and self.training:
-            return torch.utils.checkpoint.checkpoint(self.forward, *args, **kwargs)
-        else:
-            return self.forward(*args, **kwargs)
+    return embeddings
 
 
-def init_weights(module, config):
+def calculate_patch_count(
+    image_size: Union[int, Tuple[int, int]],
+    patch_size: int = 14,
+    merge_size: int = 2,
+) -> Tuple[int, int]:
     """
-    Initialize weights for vision model components.
+    Calculate the number of patches for given image dimensions.
     
     Args:
-        module: The module to initialize
-        config: Vision configuration containing initializer_range
-    """
-    std = config.initializer_range
-    if isinstance(module, (nn.Linear, nn.Conv2d, nn.Conv3d)):
-        module.weight.data.normal_(mean=0.0, std=std)
-        if module.bias is not None:
-            module.bias.data.zero_()
-    elif isinstance(module, nn.Embedding):
-        module.weight.data.normal_(mean=0.0, std=std)
-        if module.padding_idx is not None:
-            module.weight.data[module.padding_idx].zero_()
-    elif hasattr(module, 'weight') and hasattr(module.weight, 'data'):
-        # For RMSNorm and LayerNorm
-        if hasattr(module, 'variance_epsilon'):  # RMSNorm
-            module.weight.data.fill_(1.0)
-        elif isinstance(module, nn.LayerNorm):
-            module.weight.data.fill_(1.0)
-            if module.bias is not None:
-                module.bias.data.zero_()
-
-
-def create_causal_mask(seq_length: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
-    """
-    Create a causal attention mask.
-    
-    Args:
-        seq_length: Length of the sequence
-        device: Device to create the mask on
-        dtype: Data type for the mask
+        image_size: Image size (height, width) or single int for square images
+        patch_size: Size of each patch
+        merge_size: Spatial merge factor
         
     Returns:
-        Causal attention mask
+        Tuple[int, int]: (height_patches, width_patches)
     """
-    mask = torch.full((seq_length, seq_length), float('-inf'), dtype=dtype, device=device)
-    mask = torch.triu(mask, diagonal=1)
-    return mask.unsqueeze(0).unsqueeze(0)  # Add batch and head dimensions
-
-
-def get_activation_fn(activation_string: str):
-    """
-    Get activation function by name.
-    
-    Args:
-        activation_string: Name of the activation function
-        
-    Returns:
-        Activation function
-    """
-    if activation_string in ACT2FN:
-        return ACT2FN[activation_string]
+    if isinstance(image_size, int):
+        height, width = image_size, image_size
     else:
-        raise KeyError(f"function {activation_string} not found in ACT2FN mapping {list(ACT2FN.keys())}") 
+        height, width = image_size
+    
+    # Calculate effective patch size after merging
+    effective_patch_size = patch_size * merge_size
+    
+    height_patches = height // effective_patch_size
+    width_patches = width // effective_patch_size
+    
+    return height_patches, width_patches
+
+
+def prepare_image_input(
+    images: Union[Image.Image, np.ndarray, torch.Tensor, List[Any]],
+    target_device: torch.device = None,
+) -> Union[Image.Image, List[Image.Image]]:
+    """
+    Prepare image input for processing.
+    
+    Args:
+        images: Input images in various formats
+        target_device: Target device for tensor operations
+        
+    Returns:
+        Image(s) in PIL format ready for processing
+    """
+    if isinstance(images, (list, tuple)):
+        return [prepare_single_image(img) for img in images]
+    else:
+        return prepare_single_image(images)
+
+
+def prepare_single_image(image: Union[Image.Image, np.ndarray, torch.Tensor]) -> Image.Image:
+    """
+    Convert a single image to PIL format.
+    
+    Args:
+        image: Input image in various formats
+        
+    Returns:
+        PIL.Image: Image in PIL format
+    """
+    if isinstance(image, Image.Image):
+        return image
+    elif isinstance(image, np.ndarray):
+        if image.ndim == 3 and image.shape[0] in [1, 3, 4]:  # CHW format
+            image = image.transpose(1, 2, 0)
+        if image.dtype == np.float32 or image.dtype == np.float64:
+            image = (image * 255).astype(np.uint8)
+        return Image.fromarray(image)
+    elif isinstance(image, torch.Tensor):
+        if image.dim() == 3 and image.shape[0] in [1, 3, 4]:  # CHW format
+            image = image.permute(1, 2, 0)
+        if image.dtype in [torch.float32, torch.float64]:
+            image = (image * 255).to(torch.uint8)
+        return Image.fromarray(image.cpu().numpy())
+    else:
+        raise ValueError(f"Unsupported image type: {type(image)}")
+
+
+def create_attention_mask(
+    embeddings: torch.Tensor,
+    padding_length: int = 0,
+) -> torch.Tensor:
+    """
+    Create attention mask for embeddings.
+    
+    Args:
+        embeddings: Input embeddings
+        padding_length: Number of padding tokens
+        
+    Returns:
+        torch.Tensor: Attention mask (1 for valid tokens, 0 for padding)
+    """
+    if embeddings.dim() == 2:
+        seq_length = embeddings.shape[0]
+        batch_size = 1
+    else:
+        batch_size, seq_length = embeddings.shape[:2]
+    
+    # Create mask
+    mask = torch.ones(batch_size, seq_length + padding_length, 
+                     device=embeddings.device, dtype=torch.long)
+    
+    if padding_length > 0:
+        mask[:, -padding_length:] = 0
+    
+    return mask
+
+
+def validate_input_shapes(
+    pixel_values: torch.Tensor,
+    grid_thw: torch.Tensor,
+) -> bool:
+    """
+    Validate that input shapes are compatible.
+    
+    Args:
+        pixel_values: Processed pixel values
+        grid_thw: Grid temporal, height, width information
+        
+    Returns:
+        bool: True if shapes are valid
+    """
+    try:
+        # Check basic shapes
+        if pixel_values.dim() != 2:
+            return False
+        
+        if grid_thw.dim() != 2 or grid_thw.shape[1] != 3:
+            return False
+        
+        # Calculate expected patches
+        expected_patches = sum(t * h * w for t, h, w in grid_thw)
+        actual_patches = pixel_values.shape[0]
+        
+        return expected_patches == actual_patches
+    except Exception:
+        return False
+
+
+def get_embedding_info(embeddings: torch.Tensor) -> dict:
+    """
+    Get information about embeddings.
+    
+    Args:
+        embeddings: Input embeddings
+        
+    Returns:
+        dict: Information about the embeddings
+    """
+    info = {
+        "shape": list(embeddings.shape),
+        "dtype": str(embeddings.dtype),
+        "device": str(embeddings.device),
+        "requires_grad": embeddings.requires_grad,
+        "memory_usage_mb": embeddings.numel() * embeddings.element_size() / (1024 * 1024),
+    }
+    
+    if embeddings.dim() >= 2:
+        info["num_tokens"] = embeddings.shape[-2] if embeddings.dim() > 2 else embeddings.shape[0]
+        info["hidden_size"] = embeddings.shape[-1]
+    
+    return info
+
+
+__all__ = [
+    "format_embeddings_for_language_model",
+    "calculate_patch_count",
+    "prepare_image_input",
+    "prepare_single_image",
+    "create_attention_mask",
+    "validate_input_shapes",
+    "get_embedding_info",
+] 

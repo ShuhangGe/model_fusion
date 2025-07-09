@@ -19,39 +19,39 @@ from typing import Optional, Union
 
 import numpy as np
 
-from ..transformers.image_processing_utils import (
+from transformers.image_processing_utils import (
     BatchFeature,
 )
-from ..transformers.image_utils import (
+from transformers.image_utils import (
     OPENAI_CLIP_MEAN,
     OPENAI_CLIP_STD,
     ChannelDimension,
     SizeDict,
     get_image_size,
 )
-from ..transformers.processing_utils import Unpack, VideosKwargs
-from ..transformers.utils import (
+from transformers.processing_utils import Unpack, VideosKwargs
+from transformers.utils import (
     TensorType,
     add_start_docstrings,
     is_torch_available,
     is_vision_available,
 )
-from .image_processing_glm4v import smart_resize
+from .image_processing import smart_resize
 
 
 if is_torch_available():
     import torch
 
-from ..transformers.utils.import_utils import requires
-from ..transformers.video_processing_utils import (
+from transformers.utils.import_utils import requires
+from transformers.video_processing_utils import (
     BASE_VIDEO_PROCESSOR_DOCSTRING,
     BaseVideoProcessor,
 )
-from ..transformers.video_utils import VideoMetadata, group_videos_by_shape, reorder_videos
+from transformers.video_utils import VideoMetadata, group_videos_by_shape, reorder_videos
 
 
 if is_vision_available():
-    from ..transformers.image_utils import PILImageResampling
+    from transformers.image_utils import PILImageResampling
 
 import torch.nn.functional as F
 

@@ -13,16 +13,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Standalone Vision Configuration for GLM4V Vision Encoder
-Extracted from GLM4V model to be independent of text components.
-"""
+from ...transformers.configuration_utils import PretrainedConfig
+from ...transformers.modeling_rope_utils import rope_config_validation
 
 
-class VisionConfig:
+class Glm4vVisionConfig(PretrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a Vision Model. It is used to instantiate a Vision
-    model according to the specified arguments, defining the model architecture.
+    This is the configuration class to store the configuration of a [`Glm4vVisionModel`]. It is used to instantiate an Glm4vVisionModel
+    model according to the specified arguments, defining the model architecture. Instantiating a configuration with the defaults will yield
+    a similar configuration to that of
+    GLM-4.1V-9B-Thinking [THUDM/GLM-4.1V-9B-Thinking](https://huggingface.co/THUDM/GLM-4.1V-9B-Thinking).
 
     Args:
         hidden_size (`int`, *optional*, defaults to 1536):
@@ -33,18 +33,22 @@ class VisionConfig:
             Whether to add a bias to the queries, keys and values.
         intermediate_size (`int`, *optional*, defaults to 13696):
             Dimensionality of the "intermediate" (i.e., feed-forward) layer in the Transformer encoder.
-        hidden_act (`str` or `function`, *optional*, defaults to `"silu"`):
+        hidden_act (`str` or `function`, *optional*, defaults to `"selu"`):
             The non-linear activation function (function or string) in the encoder and pooler. If string, `"gelu"`,
-            `"relu"`, `"silu"` and `"gelu_new"` are supported.
+            `"relu"`, `"selu"` and `"gelu_new"` are supported.
+        hidden_dropout_prob (`float`, *optional*, defaults to 0.0):
+            The dropout probability for all fully connected layers in the embeddings, encoder, and pooler.
         attention_dropout (`float`, *optional*, defaults to 0.0):
             Dropout probability for attention weights.
+        projection_dropout (`float`, *optional*, defaults to 0.0):
+            Dropout probability for the projection layer.
         initializer_range (`float`, *optional*, defaults to 0.02):
             The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
-        image_size (`int` or `list[int]`, *optional*, defaults to 336):
+        image_size (`int` or `list[int]`, *optional*, defaults to `[336, 336]`):
             The size (resolution) of each image.
-        patch_size (`int`, *optional*, defaults to 14):
+        patch_size (`int`, *optional*, defaults to `14`):
             The size (resolution) of each patch.
-        in_channels (`int`, *optional*, defaults to 3):
+        num_channels (`int`, *optional*, defaults to 3):
             The number of input channels.
         out_hidden_size (`int`, *optional*, defaults to 4096):
             The output hidden size of the vision model.
@@ -52,30 +56,25 @@ class VisionConfig:
             The epsilon used by the rms normalization layers.
         spatial_merge_size (`int`, *optional*, defaults to 2):
             The size used for merging spatial dimensions.
-        temporal_patch_size (`int`, *optional*, defaults to 1):
+        temporal_patch_size (`int`, *optional*, defaults to 2):
             The size used for patches along the temporal dimension.
-        num_heads (`int`, *optional*, defaults to 12):
-            Number of attention heads for each attention layer in the Transformer encoder.
-        _attn_implementation (`str`, *optional*, defaults to "eager"):
-            The attention implementation to use. Can be "eager", "flash_attention_2", or "sdpa".
-
     Example:
 
     ```python
-    >>> from model.vision_encoder import VisionConfig, VisionModel
+    >>> from transformers import Glm4vVisionConfig, Glm4vVisionModel
 
-    >>> # Initializing a VisionConfig with GLM-4V style configuration
-    >>> configuration = VisionConfig()
+    >>> # Initializing a Glm4vVisionConfig GLM-4.1V-9B style configuration
+    >>> configuration = Glm4vVisionConfig()
 
-    >>> # Initializing a model (with random weights) from the configuration
-    >>> model = VisionModel(configuration)
+    >>> # Initializing a model (with random weights) from the GLM-4.1V-9B configuration
+    >>> model = Glm4vVisionModel(configuration)
 
     >>> # Accessing the model configuration
     >>> configuration = model.config
-    ```
-    """
+    ```"""
 
-    model_type = "glm4v_vision"
+    model_type = "glm4v"
+    base_config_key = "vision_config"
 
     def __init__(
         self,
@@ -94,9 +93,10 @@ class VisionConfig:
         out_hidden_size=4096,
         intermediate_size=13696,
         initializer_range=0.02,
-        _attn_implementation="eager",
         **kwargs,
     ):
+        super().__init__(**kwargs)
+
         self.depth = depth
         self.hidden_size = hidden_size
         self.hidden_act = hidden_act
@@ -112,20 +112,6 @@ class VisionConfig:
         self.rms_norm_eps = rms_norm_eps
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
-        self._attn_implementation = _attn_implementation
 
-    def to_dict(self):
-        """
-        Serializes this instance to a Python dictionary.
-        """
-        output = {}
-        for key, value in self.__dict__.items():
-            output[key] = value
-        return output
 
-    @classmethod
-    def from_dict(cls, config_dict, **kwargs):
-        """
-        Instantiates a VisionConfig from a Python dictionary of parameters.
-        """
-        return cls(**config_dict, **kwargs) 
+__all__ = ["Glm4vVisionConfig"] 
